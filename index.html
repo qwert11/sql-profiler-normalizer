@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SQL Profiler Normalizer</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --text: #1f2937;
+      --muted: #667085;
+      --border: #d8dee9;
+      --primary: #3b82f6;
+      --primary-2: #2563eb;
+      --shadow: 0 8px 30px rgba(15, 23, 42, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    body {
+      min-height: 100vh;
+    }
+
+    .page {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 20px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .head h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      line-height: 1.15;
+    }
+
+    .head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+      flex-wrap: wrap;
+    }
+
+    .toolbar-left, .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button.primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+
+    button:hover { filter: brightness(0.98); }
+    button.primary:hover { background: var(--primary-2); }
+
+    label.toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .editors {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      min-height: 0;
+      flex: 1;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-2);
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    textarea {
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      padding: 14px;
+      border: 0;
+      outline: none;
+      resize: none;
+      font: 16px/1.5 Consolas, 'Courier New', monospace;
+      color: var(--text);
+      background: #fff;
+      overflow: auto;
+      white-space: pre;
+      tab-size: 2;
+    }
+
+    #input.has-demo {
+      color: #6b7280;
+    }
+
+    @media (max-width: 980px) {
+      .page {
+        height: auto;
+        min-height: 100vh;
+      }
+      .editors {
+        grid-template-columns: 1fr;
+      }
+      .panel {
+        min-height: 42vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="head">
+      <h1>SQL Profiler Normalizer</h1>
+      <p>Paste SQL Server Profiler <code>sp_executesql</code> text, convert it to a readable <code>EXEC</code> statement, and optionally apply light formatting.</p>
+    </div>
+
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <button class="primary" id="normalizeBtn">Normalize</button>
+        <button id="copyBtn">Copy result</button>
+        <button id="clearBtn">Clear</button>
+        <label class="toggle"><input type="checkbox" id="beauty" checked /> Beauty format</label>
+      </div>
+      <div class="toolbar-right">
+        <span class="status" id="status">Ready</span>
+      </div>
+    </div>
+
+    <div class="editors">
+      <div class="panel">
+        <div class="panel-head">
+          <span>Input</span>
+          <span>raw Profiler text</span>
+        </div>
+        <textarea id="input" spellcheck="false"></textarea>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span>Output</span>
+          <span>normalized SQL</span>
+        </div>
+        <textarea id="output" spellcheck="false" readonly></textarea>
+      </div>
+    </div>
+  </div>
+
+  
+  <script>
+    const demoInput = `exec sp_executesql N'EXEC Customer_save @ID = @P1, @Name = @P2',N'@P1 int,@P2 nvarchar(50)',42,N'John Carter'`;
+
+    const demoOutput = `EXEC Customer_save
+  @ID = 42,
+  @Name = N'John Carter'`;
+
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const beauty = document.getElementById('beauty');
+    const statusEl = document.getElementById('status');
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function splitTopLevelCsv(text) {
+      const items = [];
+      let current = '';
+      let inString = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const next = text[i + 1];
+
+        if (ch === "'") {
+          current += ch;
+          if (inString && next === "'") {
+            current += next;
+            i++;
+          } else {
+            inString = !inString;
+          }
+          continue;
+        }
+
+        if (ch === ',' && !inString) {
+          items.push(current.trim());
+          current = '';
+          continue;
+        }
+
+        current += ch;
+      }
+
+      if (current.trim()) {
+        items.push(current.trim());
+      }
+
+      return items;
+    }
+
+    function beautifySql(sql) {
+      const trimmed = sql.replace(/\r/g, '').trim();
+      if (!trimmed) return '';
+
+      const compact = trimmed
+        .replace(/\n+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/\s+,/g, ',')
+        .trim();
+
+      const execMatch = compact.match(/^EXEC\s+([^\s]+)\s*(.*)$/i);
+      if (!execMatch) return trimmed;
+
+      const procName = execMatch[1];
+      const rest = (execMatch[2] || '').trim();
+      if (!rest) return `EXEC ${procName}`;
+
+      const params = splitTopLevelCsv(rest);
+      if (!params.length) return `EXEC ${procName} ${rest}`;
+
+      return `EXEC ${procName}\n` + params.map((part, index) => {
+        const suffix = index < params.length - 1 ? ',' : '';
+        return `  ${part.trim()}${suffix}`;
+      }).join('\n');
+    }
+
+    function extractQuotedSql(text, startIndex) {
+      let i = startIndex;
+      while (i < text.length && /\s/.test(text[i])) i++;
+
+      if (text[i] !== 'N' && text[i] !== 'n' && text[i] !== "'") {
+        throw new Error('Expected quoted SQL block');
+      }
+
+      if (text[i] === 'N' || text[i] === 'n') i++;
+      if (text[i] !== "'") throw new Error('Expected opening quote');
+      i++;
+
+      let value = '';
+      while (i < text.length) {
+        const ch = text[i];
+        const next = text[i + 1];
+        if (ch === "'") {
+          if (next === "'") {
+            value += "''";
+            i += 2;
+            continue;
+          }
+          i++;
+          break;
+        }
+        value += ch;
+        i++;
+      }
+
+      return { value, endIndex: i };
+    }
+
+    function normalizeProfilerSql(text) {
+      const source = text.trim();
+      if (!source) {
+        return { sql: '', mode: 'Empty input' };
+      }
+
+      const execIndex = source.toLowerCase().indexOf('sp_executesql');
+      if (execIndex === -1) {
+        const pass = beauty.checked ? beautifySql(source) : source;
+        return { sql: pass, mode: beauty.checked ? 'Formatted only' : 'Copied as-is' };
+      }
+
+      const firstBlock = extractQuotedSql(source, execIndex + 'sp_executesql'.length);
+      let pos = firstBlock.endIndex;
+      while (pos < source.length && /\s/.test(source[pos])) pos++;
+      if (source[pos] === ',') pos++;
+
+      const secondBlock = extractQuotedSql(source, pos);
+      pos = secondBlock.endIndex;
+      while (pos < source.length && /\s/.test(source[pos])) pos++;
+      if (source[pos] === ',') pos++;
+
+      const template = firstBlock.value.replace(/\r/g, '').trim();
+      const valuesText = source.slice(pos).trim();
+      const values = splitTopLevelCsv(valuesText);
+
+      let sql = template;
+      values.forEach((value, index) => {
+        const token = '@P' + (index + 1);
+        const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        sql = sql.replace(new RegExp(escaped + '(?!\\d)', 'gi'), value || 'NULL');
+      });
+
+      sql = sql.replace(/\r/g, '').trim();
+      if (beauty.checked) {
+        sql = beautifySql(sql);
+      }
+
+      return { sql, mode: beauty.checked ? 'Normalized + formatted' : 'Normalized' };
+    }
+
+    function runNormalize() {
+      const result = normalizeProfilerSql(input.value);
+      output.value = result.sql;
+      setStatus(result.mode || 'Done');
+    }
+
+    function applyDemo() {
+      input.value = demoInput;
+      input.classList.add('has-demo');
+      output.value = beauty.checked ? beautifySql(demoOutput) : demoOutput;
+      setStatus(beauty.checked ? 'Demo loaded + formatted' : 'Demo loaded');
+    }
+
+    document.getElementById('normalizeBtn').addEventListener('click', runNormalize);
+
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+      const text = output.value;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus('Result copied');
+      } catch {
+        output.select();
+        document.execCommand('copy');
+        setStatus('Result copied');
+      }
+    });
+
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      input.value = '';
+      output.value = '';
+      input.classList.remove('has-demo');
+      setStatus('Cleared');
+    });
+
+    beauty.addEventListener('change', () => {
+      if (input.value.trim()) {
+        runNormalize();
+      } else if (output.value.trim()) {
+        output.value = beauty.checked ? beautifySql(output.value) : output.value;
+      }
+    });
+
+    input.addEventListener('focus', () => {
+      if (input.classList.contains('has-demo')) {
+        input.value = '';
+        output.value = '';
+        input.classList.remove('has-demo');
+        setStatus('Ready');
+      }
+    }, { once: true });
+
+    input.addEventListener('keydown', (event) => {
+      if (event.ctrlKey && event.key === 'Enter') {
+        event.preventDefault();
+        runNormalize();
+      }
+    });
+
+    applyDemo();
+  </script>
+
+</body>
+</html>
