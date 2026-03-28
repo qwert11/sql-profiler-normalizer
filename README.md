@@ -99,7 +99,7 @@ Open `index.html` in any modern browser.
 
 The site will be published at:
 
-https://YOUR_USERNAME.github.io/YOUR_REPOSITORY_NAME/
+https://github.com/qwert11/sql-profiler-normalizer
 
 ## Suggested GitHub topics
 
